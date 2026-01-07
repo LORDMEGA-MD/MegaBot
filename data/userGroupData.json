@@ -1,0 +1,48 @@
+{
+  "users": [],
+  "groups": [],
+  "antilink": {
+    "120363405283545707@g.us": {
+      "enabled": true,
+      "action": "kick"
+    },
+    "120363422628498924@g.us": {
+      "enabled": true,
+      "action": "kick"
+    },
+    "120363419490462623@g.us": {
+      "enabled": true,
+      "action": "kick"
+    },
+    "120363401337033109@g.us": {
+      "enabled": true,
+      "action": "kick"
+    },
+    "120363407082041901@g.us": {
+      "enabled": true,
+      "action": "kick"
+    }
+  },
+  "antibadword": {},
+  "warnings": {
+    "120363405283545707@g.us": {
+      "86058779857053@lid": 0
+    }
+  },
+  "sudo": [
+    "256783991705@s.whatsapp.net",
+    "139213345431654@lid",
+    "91376066806001@lid",
+    "86058779857053@lid"
+  ],
+  "welcome": {},
+  "goodbye": {},
+  "chatbot": {},
+  "autoReaction": false,
+  "antisticker": {
+    "120363405283545707@g.us": {
+      "enabled": true,
+      "action": "warn"
+    }
+  }
+}
