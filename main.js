@@ -156,8 +156,8 @@ const channelInfo = {
         forwardingScore: 1,
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
-            newsletterJid: '120363161513685998@newsletter',
-            newsletterName: 'KnightBot MD',
+            newsletterJid: '22120363161513685998@newsletter',
+            newsletterName: 'MegaBot MD',
             serverMessageId: -1
         }
     }
@@ -1303,3 +1303,4 @@ module.exports = {
         await handleStatusUpdate(sock, status);
     }
 };
+
