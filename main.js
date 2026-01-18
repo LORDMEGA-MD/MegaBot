@@ -40,6 +40,7 @@ const { autotypingCommand, isAutotypingEnabled, handleAutotypingForMessage, hand
 const { autoreadCommand, isAutoreadEnabled, handleAutoread } = require('./commands/autoread');
 
 // Command imports
+const { AntiSticker, handleAntiStickerCommand } = require('./lib/antisticker');
 const tagAllCommand = require('./commands/tagall');
 const helpCommand = require('./commands/help');
 const banCommand = require('./commands/ban');
@@ -318,7 +319,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         }
 
         // List of admin commands
-        const adminCommands = ['.mute', '.unmute', '.ban', '.unban', '.promote', '.demote', '.kick', '.tagall', '.tagnotadmin', '.hidetag', '.antilink', '.antitag', '.setgdesc', '.setgname', '.setgpp'];
+        const adminCommands = ['.mute', '.unmute', '.ban', '.unban', '.promote', '.demote', '.kick', '.tagall', '.tagnotadmin', '.hidetag', '.antilink', '.antitag', '.antisticker', '.setgdesc', '.setgname', '.setgpp'];
         const isAdminCommand = adminCommands.some(cmd => userMessage.startsWith(cmd));
 
         // List of owner commands
@@ -404,10 +405,24 @@ async function handleMessages(sock, messageUpdate, printLog) {
                     if (!message.key.fromMe && !senderIsSudo) {
                         await sock.sendMessage(chatId, { text: 'Only owner/sudo can use .ban in private chat.' }, { quoted: message });
                         break;
+                        
                     }
                 }
                 await banCommand(sock, chatId, message);
                 break;
+            //sticker
+        
+        sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message) return;
+
+    // 🔥 THIS LINE IS REQUIRED
+    await AntiSticker(msg, sock);
+
+    // rest of your handler...
+});
+       //sticker
+                break:
             case userMessage.startsWith('.unban'):
                 if (!isGroup) {
                     if (!message.key.fromMe && !senderIsSudo) {
