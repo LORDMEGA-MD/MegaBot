@@ -422,7 +422,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
     // rest of your handler...
 });
        //sticker
-                break:
+                break;
             case userMessage.startsWith('.unban'):
                 if (!isGroup) {
                     if (!message.key.fromMe && !senderIsSudo) {
