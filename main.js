@@ -1,4 +1,4 @@
-// 🧹 Fix for ENOSPC / temp overflow in hosted panels
+// fixes
 const fs = require('fs');
 const path = require('path');
 
@@ -281,6 +281,19 @@ async function handleMessages(sock, messageUpdate, printLog) {
             // Antilink checks message text internally, so run it even if userMessage is empty
             await Antilink(message, sock);
         }
+        //sticker
+        
+        sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message) return;
+
+    // 🔥 THIS LINE IS REQUIRED
+    await AntiSticker(msg, sock);
+
+    // rest of your handler...
+});
+       //sticker
+        
 
         // PM blocker: block non-owner DMs when enabled (do not ban)
         if (!isGroup && !message.key.fromMe && !senderIsSudo) {
@@ -444,6 +457,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         }, { quoted: message });
     }
     break;
+                //===========
             case userMessage.startsWith('.unban'):
                 if (!isGroup) {
                     if (!message.key.fromMe && !senderIsSudo) {
