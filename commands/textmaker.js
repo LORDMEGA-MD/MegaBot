@@ -5,11 +5,11 @@ const mumaker = require('mumaker');
 const channelInfo = {
     forwardingScore: 1,
     isForwarded: true,
-    forwardedNewsletterMessageInfo: {
-        newsletterJid: '2120363161513685998@newsletter',
-        newsletterName: 'MegaBot MD',
-        serverMessageId: -1
-    }
+    //forwardedNewsletterMessageInfo: {
+       // newsletterJid: '2120363161513685998@newsletter',
+      //  newsletterName: 'MegaBot MD',
+      //  serverMessageId: -1
+    //}
 };
 
 // Reusable message templates
