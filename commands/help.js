@@ -222,7 +222,7 @@ async function helpCommand(sock, chatId, message) {
 ║ ➤                ʞuᴉןl   > 4dɯʇʎ.⇦
 °                     📥 *ɹǝpɐoןuʍoᗡ*  
 ╚═════════════╝
-> LORDMEGA NULL CHANNEL:`;
+> LORDMEGA THE @OUTLAW:`;
 
     try {
         const imagePath = path.join(__dirname, '../assets/bot_image.jpg');
@@ -236,11 +236,11 @@ async function helpCommand(sock, chatId, message) {
                 contextInfo: {
                     forwardingScore: 1,
                     isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '2120363161513685998@newsletter',
-                        newsletterName: 'MegaBot MD',
-                        serverMessageId: -1
-                    }
+                    //forwardedNewsletterMessageInfo: {
+                     //   newsletterJid: '2120363161513685998@newsletter',
+                      //  newsletterName: 'MegaBot MD',
+                       // serverMessageId: -1
+                    //}
                 }
             },{ quoted: message });
         } else {
@@ -250,11 +250,11 @@ async function helpCommand(sock, chatId, message) {
                 contextInfo: {
                     forwardingScore: 1,
                     isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '2120363161513685998@newsletter',
-                        newsletterName: 'MegaBot MD by Mr Unique Hacker',
-                        serverMessageId: -1
-                    } 
+                    //forwardedNewsletterMessageInfo: {
+                      //  newsletterJid: '2120363161513685998@newsletter',
+                       // newsletterName: 'MegaBot MD',
+                       // serverMessageId: -1
+                    //} 
                 }
             });
         }
