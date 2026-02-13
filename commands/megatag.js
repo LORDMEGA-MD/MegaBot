@@ -5,13 +5,13 @@ async function megaTagCommand(sock, chatId, senderId, userMessage, message) {
 
         if (chatId.endsWith('@g.us')) {
             return sock.sendMessage(chatId, {
-                text: "❌ Use this command in bot DM."
+                text: "> MF please Use this command in bots DM🙏."
             }, { quoted: message });
         }
 
         let content = userMessage.replace('.megatag', '').trim();
 
-        // -------- Extract Group --------
+        // -------- Extract Group From JID --------
         let groupId = null;
 
         const groupMatch = content.match(/\d+@g\.us/);
@@ -20,15 +20,23 @@ async function megaTagCommand(sock, chatId, senderId, userMessage, message) {
             content = content.replace(groupId, '').trim();
         }
 
+        // -------- Extract Group From Link --------
         const inviteMatch = content.match(/chat\.whatsapp\.com\/([\w\d]+)/);
+
         if (inviteMatch) {
-            groupId = await sock.groupAcceptInvite(inviteMatch[1]);
-            content = content.replace(inviteMatch[0], '').trim();
+            try {
+                groupId = await sock.groupAcceptInvite(inviteMatch[1]);
+                content = content.replace(inviteMatch[0], '').trim();
+            } catch {
+                return sock.sendMessage(chatId, {
+                    text: "> Invalid or expired group link."
+                }, { quoted: message });
+            }
         }
 
         if (!groupId) {
             return sock.sendMessage(chatId, {
-                text: "❌ Provide group JID or invite link."
+                text: "> Provide group link or group JID."
             }, { quoted: message });
         }
 
@@ -38,14 +46,14 @@ async function megaTagCommand(sock, chatId, senderId, userMessage, message) {
 
         if (!foundNumbers.length) {
             return sock.sendMessage(chatId, {
-                text: "❌ No valid numbers found."
+                text: "> No valid numbers found."
             }, { quoted: message });
         }
 
         let finalText = content;
         let numbers = [];
 
-        // Replace numbers inline
+        // Inline replace numbers
         for (let rawNum of foundNumbers) {
 
             const cleanNum = rawNum.replace(/\D/g, '');
@@ -54,14 +62,12 @@ async function megaTagCommand(sock, chatId, senderId, userMessage, message) {
 
             numbers.push(cleanNum);
 
-            // Replace only this exact occurrence inline
             finalText = finalText.replace(rawNum, `@${cleanNum}`);
         }
 
-        // Remove duplicates
         numbers = [...new Set(numbers)];
 
-        // Convert to JIDs
+        // Convert numbers → JIDs
         const targetJids = numbers.map(num =>
             jidNormalizedUser(num + "@s.whatsapp.net")
         );
@@ -76,13 +82,13 @@ async function megaTagCommand(sock, chatId, senderId, userMessage, message) {
         });
 
         await sock.sendMessage(chatId, {
-            text: `✅ Megatag sent to ${numbers.length} user(s).`
+            text: `> ✅ Megatag sent to ${numbers.length} user(s).`
         });
 
     } catch (err) {
         console.log(err);
         await sock.sendMessage(chatId, {
-            text: "❌ Failed to send megatag."
+            text: "> Failed to send megatag."
         }, { quoted: message });
     }
 }
