@@ -49,7 +49,6 @@ async function handleGStatus(sock, msg, chatId) {
         }, { quoted: msg })
       }
 
-      await sock.sendMessage(from, { text: '> MEGA-BOT Initalizing text group status...' })
 
       await groupStatus(sock, from, {
         text: caption,
@@ -57,7 +56,7 @@ async function handleGStatus(sock, msg, chatId) {
       })
 
       return sock.sendMessage(from, {
-        text: '> DONE'
+        text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_'
       }, { quoted: msg })
     }
 
