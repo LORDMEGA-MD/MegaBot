@@ -85,7 +85,6 @@ async function handleGStatus(sock, msg, chatId) {
     // IMAGE / STICKER
     if (/image|sticker/i.test(mtype)) {
 
-      //await sock.sendMessage(from, { text: '> MEGA-BOT Initialzing image group status...' })
 
       const buf = await downloadBuf()
       if (!buf) return sock.sendMessage(from, { text: '>  Could not download image' }, { quoted: msg })
@@ -103,7 +102,6 @@ async function handleGStatus(sock, msg, chatId) {
     // VIDEO
     if (/video/i.test(mtype)) {
 
-    //  await sock.sendMessage(from, { text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_' })
 
       const buf = await downloadBuf()
       if (!buf) return sock.sendMessage(from, { text: '> Could not download video' }, { quoted: msg })
@@ -121,7 +119,6 @@ async function handleGStatus(sock, msg, chatId) {
     // AUDIO
     if (/audio/i.test(mtype)) {
 
-     // await sock.sendMessage(from, { text: '> MEGA-BOT Initializing  audio group status...' })
 
       const buf = await downloadBuf()
       if (!buf) return sock.sendMessage(from, { text: '> Could not download audio' }, { quoted: msg })
