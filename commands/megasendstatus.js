@@ -1,111 +1,203 @@
-// megasendstatus.js
-// .gstatus: post text or quoted media as group-scoped status (visible only to current group members)
 
-const { proto, downloadMediaMessage } = require('@whiskeysockets/baileys');
+const {
+  generateWAMessageContent,
+  generateWAMessageFromContent,
+  downloadContentFromMessage,
+} = require('@whiskeysockets/baileys')
 
-/**
- * Sends status scoped to current group members
- */
-async function sendGroupScopedStatus(sock, groupJid, content, options = {}) {
-    if (!groupJid.endsWith('@g.us')) {
-        throw new Error('Only works in groups');
+const { PassThrough } = require('stream')
+const ffmpeg = require('fluent-ffmpeg')
+const crypto = require('crypto')
+
+const MEGA_BG = '#2196F3'
+
+async function handleGStatus(sock, msg, chatId) {
+
+  const from = chatId || msg?.key?.remoteJid
+  if (!from) return
+
+  if (!from.endsWith('@g.us')) {
+    return sock.sendMessage(from, {
+      text: '> This command can only be used in groups.'
+    })
+  }
+
+  const body =
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    ""
+
+  const caption = body.split(' ').slice(1).join(' ').trim()
+
+  const ctxInfo = msg.message?.extendedTextMessage?.contextInfo
+  const hasQuoted = !!ctxInfo?.quotedMessage
+
+  try {
+
+    // TEXT STATUS
+    if (!hasQuoted) {
+
+      if (!caption) {
+        return sock.sendMessage(from, {
+          text:
+            '> *Group Status Usage*\n\n' +
+            ' • Reply to image/video/audio with:\n' +
+            '  `.gstatus [optional caption]`\n' +
+            '• Or send text status only:\n' +
+            '  `.gstatus Your text here`\n\n' +
+            'Text statuses use a blue BG.'
+        }, { quoted: msg })
+      }
+
+      await sock.sendMessage(from, { text: '> MEGA-BOT Initalizing text group status...' })
+
+      await groupStatus(sock, from, {
+        text: caption,
+        backgroundColor: MEGA_BG
+      })
+
+      return sock.sendMessage(from, {
+        text: '> DONE'
+      }, { quoted: msg })
     }
 
-    let participants = [];
-    try {
-        const meta = await sock.groupMetadata(groupJid);
-        participants = meta.participants
-            .map(p => p.id)
-            .filter(id => id !== sock.user?.id);
-
-        if (participants.length === 0) throw new Error('No members');
-    } catch (err) {
-        throw new Error(`Group fetch failed: ${err.message}`);
+    // QUOTED MEDIA
+    const targetMessage = {
+      key: {
+        remoteJid: from,
+        id: ctxInfo.stanzaId,
+        participant: ctxInfo.participant,
+      },
+      message: ctxInfo.quotedMessage
     }
 
-    const statusOptions = {
-        broadcast: true,
-        statusJidList: participants,
-        backgroundColor: options.backgroundColor || '#000000',
-        font: options.font || 0,
-        ...options
-    };
+    const mtype = Object.keys(targetMessage.message)[0] || ''
 
-    try {
-        const result = await sock.sendMessage('status@broadcast', content, statusOptions);
-        console.log(`[GSTATUS] Sent | ${participants.length} recipients | Key: ${result?.key?.id}`);
-        return result;
-    } catch (err) {
-        console.error('[GSTATUS SEND ERROR]', err.message || err);
-        throw err;
+    const downloadBuf = async () => {
+      const qmsg = targetMessage.message
+      if (/image/i.test(mtype)) return await downloadMedia(qmsg, 'image')
+      if (/video/i.test(mtype)) return await downloadMedia(qmsg, 'video')
+      if (/audio/i.test(mtype)) return await downloadMedia(qmsg, 'audio')
+      if (/sticker/i.test(mtype)) return await downloadMedia(qmsg, 'sticker')
+      return null
     }
+
+    // IMAGE / STICKER
+    if (/image|sticker/i.test(mtype)) {
+
+      //await sock.sendMessage(from, { text: '> MEGA-BOT Initialzing image group status...' })
+
+      const buf = await downloadBuf()
+      if (!buf) return sock.sendMessage(from, { text: '>  Could not download image' }, { quoted: msg })
+
+      await groupStatus(sock, from, {
+        image: buf,
+        caption: caption || ''
+      })
+
+      return sock.sendMessage(from, {
+        text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_'
+      }, { quoted: msg })
+    }
+
+    // VIDEO
+    if (/video/i.test(mtype)) {
+
+    //  await sock.sendMessage(from, { text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_' })
+
+      const buf = await downloadBuf()
+      if (!buf) return sock.sendMessage(from, { text: '> Could not download video' }, { quoted: msg })
+
+      await groupStatus(sock, from, {
+        video: buf,
+        caption: caption || ''
+      })
+
+      return sock.sendMessage(from, {
+        text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_'
+      }, { quoted: msg })
+    }
+
+    // AUDIO
+    if (/audio/i.test(mtype)) {
+
+     // await sock.sendMessage(from, { text: '> MEGA-BOT Initializing  audio group status...' })
+
+      const buf = await downloadBuf()
+      if (!buf) return sock.sendMessage(from, { text: '> Could not download audio' }, { quoted: msg })
+
+      let vn
+      try { vn = await toVN(buf) } catch { vn = buf }
+
+      let waveform
+      try { waveform = await generateWaveform(buf) } catch { waveform = undefined }
+
+      await groupStatus(sock, from, {
+        audio: vn,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
+        waveform
+      })
+
+      return sock.sendMessage(from, {
+        text: '*POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_'
+      }, { quoted: msg })
+    }
+
+    return sock.sendMessage(from, {
+      text: '> ❌ Unsupported media type.'
+    }, { quoted: msg })
+
+  } catch (e) {
+
+    console.error('groupstatus error:', e)
+
+    return sock.sendMessage(from, {
+      text: '❌ Error: ' + (e.message || e)
+    }, { quoted: msg })
+  }
 }
 
-/**
- * Command handler: .gstatus [caption] (reply to media optional)
- */
-async function handleGStatus(sock, message, chatId, textAfterCommand) {
-    if (!chatId.endsWith('@g.us')) {
-        await sock.sendMessage(chatId, { text: '❌ Use .gstatus only in groups' });
-        return;
-    }
+module.exports = { handleGStatus }
 
-    const caption = textAfterCommand.trim() || '';
 
-    let content = { text: caption || ' ' }; // default blank/fallback text
+// ---------- Helpers ----------
 
-    // Check for quoted message with media
-    const quotedContext = message.message?.extendedTextMessage?.contextInfo;
-    const quotedMsg = quotedContext?.quotedMessage;
+async function downloadMedia(msg, type) {
+  const mediaMsg = msg[`${type}Message`] || msg
+  const stream = await downloadContentFromMessage(mediaMsg, type)
 
-    if (quotedMsg) {
-        try {
-            // Download media from the quoted message
-            const buffer = await downloadMediaMessage(
-                { key: quotedContext.stanzaId ? { ...quotedContext, remoteJid: chatId } : message.key, message: quotedMsg },
-                'buffer',
-                {},
-                { logger: sock.logger || console, reuploadRequest: sock.updateMediaMessage }
-            );
+  const chunks = []
+  for await (const chunk of stream) chunks.push(chunk)
 
-            const msgType = Object.keys(quotedMsg)[0]; // e.g. imageMessage, videoMessage
+  return Buffer.concat(chunks)
+}
 
-            if (msgType === 'imageMessage') {
-                content = { image: buffer, caption: caption || quotedMsg.imageMessage?.caption || ' ' };
-            } else if (msgType === 'videoMessage') {
-                content = { video: buffer, caption: caption || quotedMsg.videoMessage?.caption || ' ' };
-            } else if (msgType === 'stickerMessage') {
-                content = { sticker: buffer };
-            } else if (msgType === 'documentMessage') {
-                content = { document: buffer, mimetype: quotedMsg.documentMessage.mimetype, fileName: quotedMsg.documentMessage.fileName || 'doc', caption };
-            } else {
-                content = { text: caption || 'Quoted non-media message' };
-            }
+async function groupStatus(sock, jid, content) {
 
-            console.log(`[GSTATUS] Quoted media type: ${msgType}`);
-        } catch (downloadErr) {
-            console.error('[GSTATUS DOWNLOAD ERROR]', downloadErr.message || downloadErr);
-            content = { text: caption || 'Failed to download quoted media — posting text only' };
+  const { backgroundColor } = content
+  delete content.backgroundColor
+
+  const inside = await generateWAMessageContent(content, {
+    upload: sock.waUploadToServer,
+    backgroundColor: backgroundColor || MEGA_BG
+  })
+
+  const secret = crypto.randomBytes(32)
+
+  const msg = generateWAMessageFromContent(
+    jid,
+    {
+      messageContextInfo: { messageSecret: secret },
+      groupStatusMessageV2: {
+        message: {
+          ...inside,
+          messageContextInfo: { messageSecret: secret }
         }
-    } else if (!caption) {
-        await sock.sendMessage(chatId, { text: '❌ Reply to media or add text after .gstatus' });
-        return;
-    }
+      }
+    },
+    {}
+  )
 
-    try {
-        await sendGroupScopedStatus(sock, chatId, content, {
-            backgroundColor: '#1E90FF', // optional styling
-            font: 2
-        });
-
-        await sock.sendMessage(chatId, { 
-            text: ' *POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_' 
-        }, { quoted: message });
-    } catch (err) {
-        await sock.sendMessage(chatId, { text: `❌ Failed to post: ${err.message}` }, { quoted: message });
-    }
-}
-
-module.exports = {
-    handleGStatus
-};
+  await sock.relayMessage(jid, msg.message, { messageId: msg.key.id })
+  }
