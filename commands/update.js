@@ -1,13 +1,12 @@
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 const settings = require('../settings');
 const isOwnerOrSudo = require('../lib/isOwner');
 
-function run(cmd) {
+function run(cmd, opts = {}) {
     return new Promise((resolve, reject) => {
-        exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
+        exec(cmd, { windowsHide: true, ...opts }, (err, stdout, stderr) => {
             if (err) return reject(new Error((stderr || stdout || err.message || '').toString()));
             resolve((stdout || '').toString());
         });
@@ -30,17 +29,14 @@ async function updateViaGit() {
     await run('git fetch --all --prune');
     const newRev = (await run('git rev-parse origin/main')).trim();
     const alreadyUpToDate = oldRev === newRev;
-    const commits = alreadyUpToDate ? '' : await run(`git log --pretty=format:"%h %s (%an)" ${oldRev}..${newRev}`).catch(() => '');
-    const files = alreadyUpToDate ? '' : await run(`git diff --name-status ${oldRev} ${newRev}`).catch(() => '');
     await run(`git reset --hard ${newRev}`);
     await run('git clean -fd');
-    return { oldRev, newRev, alreadyUpToDate, commits, files };
+    return { oldRev, newRev, alreadyUpToDate };
 }
 
 function downloadFile(url, dest, visited = new Set()) {
     return new Promise((resolve, reject) => {
         try {
-            // Avoid infinite redirect loops
             if (visited.has(url) || visited.size > 5) {
                 return reject(new Error('Too many redirects'));
             }
@@ -54,7 +50,6 @@ function downloadFile(url, dest, visited = new Set()) {
                     'Accept': '*/*'
                 }
             }, res => {
-                // Handle redirects
                 if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
                     const location = res.headers.location;
                     if (!location) return reject(new Error(`HTTP ${res.statusCode} without Location`));
@@ -85,13 +80,11 @@ function downloadFile(url, dest, visited = new Set()) {
 }
 
 async function extractZip(zipPath, outDir) {
-    // Try to use platform tools; no extra npm modules required
     if (process.platform === 'win32') {
         const cmd = `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`;
         await run(cmd);
         return;
     }
-    // Linux/mac: try unzip, else 7z, else busybox unzip
     try {
         await run('command -v unzip');
         await run(`unzip -o '${zipPath}' -d '${outDir}'`);
@@ -107,7 +100,7 @@ async function extractZip(zipPath, outDir) {
         await run(`busybox unzip -o '${zipPath}' -d '${outDir}'`);
         return;
     } catch {}
-    throw new Error("No system unzip tool found (unzip/7z/busybox). Git mode is recommended on this panel.");
+    throw new Error("No system unzip tool found (unzip/7z/busybox). Git mode is recommended.");
 }
 
 function copyRecursive(src, dest, ignore = [], relative = '', outList = []) {
@@ -126,35 +119,36 @@ function copyRecursive(src, dest, ignore = [], relative = '', outList = []) {
     }
 }
 
-async function updateViaZip(sock, chatId, message, zipOverride) {
+async function updateViaZip(zipOverride) {
     const zipUrl = (zipOverride || settings.updateZipUrl || process.env.UPDATE_ZIP_URL || '').trim();
-    if (!zipUrl) {
-        throw new Error('No ZIP URL configured. Set settings.updateZipUrl or UPDATE_ZIP_URL env.');
-    }
+    if (!zipUrl) throw new Error('No ZIP URL configured. Set settings.updateZipUrl or UPDATE_ZIP_URL env.');
+
     const tmpDir = path.join(process.cwd(), 'tmp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
     const zipPath = path.join(tmpDir, 'update.zip');
     await downloadFile(zipUrl, zipPath);
+
     const extractTo = path.join(tmpDir, 'update_extract');
     if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
     await extractZip(zipPath, extractTo);
 
-    // Find the top-level extracted folder (GitHub zips create REPO-branch folder)
     const [root] = fs.readdirSync(extractTo).map(n => path.join(extractTo, n));
     const srcRoot = fs.existsSync(root) && fs.lstatSync(root).isDirectory() ? root : extractTo;
 
-    // Copy over while preserving runtime dirs/files
-    const ignore = ['node_modules', '.git', 'session', 'tmp', 'tmp/', 'temp', 'data', 'baileys_store.json'];
-    const copied = [];
-    // Preserve ownerNumber from existing settings.js if present
+    const ignore = ['node_modules', '.git', 'session', 'tmp', 'temp', 'data', 'baileys_store.json'];
+
+    // Preserve owner settings
     let preservedOwner = null;
     let preservedBotOwner = null;
     try {
         const currentSettings = require('../settings');
-        preservedOwner = currentSettings && currentSettings.ownerNumber ? String(currentSettings.ownerNumber) : null;
-        preservedBotOwner = currentSettings && currentSettings.botOwner ? String(currentSettings.botOwner) : null;
+        preservedOwner = currentSettings?.ownerNumber ? String(currentSettings.ownerNumber) : null;
+        preservedBotOwner = currentSettings?.botOwner ? String(currentSettings.botOwner) : null;
     } catch {}
+
+    const copied = [];
     copyRecursive(srcRoot, process.cwd(), ignore, '', copied);
+
     if (preservedOwner) {
         try {
             const settingsPath = path.join(process.cwd(), 'settings.js');
@@ -168,64 +162,147 @@ async function updateViaZip(sock, chatId, message, zipOverride) {
             }
         } catch {}
     }
-    // Cleanup extracted directory
+
     try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(zipPath, { force: true }); } catch {}
+
     return { copiedFiles: copied };
 }
 
+/**
+ * Runs npm install in a low-memory safe way.
+ * Uses --prefer-offline to avoid re-downloading already cached packages,
+ * and limits concurrent workers to avoid OOM on small servers.
+ */
+async function safeNpmInstall() {
+    return new Promise((resolve, reject) => {
+        console.log('[update] Running npm install (low-memory mode)...');
+
+        const child = spawn('npm', [
+            'install',
+            '--no-audit',
+            '--no-fund',
+            '--prefer-offline',     // use cache first — much less RAM
+            '--no-optional',        // skip optional deps
+            '--maxsockets=1',       // limit parallel network connections
+        ], {
+            cwd: process.cwd(),
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: {
+                ...process.env,
+                NODE_OPTIONS: '--max-old-space-size=128', // cap npm's own RAM to 128MB
+            }
+        });
+
+        let stderr = '';
+        child.stderr.on('data', d => { stderr += d.toString(); });
+
+        child.on('close', (code) => {
+            if (code === 0) {
+                console.log('[update] npm install completed');
+                resolve();
+            } else {
+                console.error('[update] npm install failed:', stderr);
+                // Don't reject — missing optional packages shouldn't block restart
+                resolve();
+            }
+        });
+
+        child.on('error', (err) => {
+            console.error('[update] npm spawn error:', err.message);
+            resolve(); // Still don't block restart
+        });
+
+        // Safety timeout — if npm hangs for 3 minutes on a slow server, move on
+        setTimeout(() => {
+            try { child.kill('SIGTERM'); } catch {}
+            console.log('[update] npm install timed out — continuing anyway');
+            resolve();
+        }, 3 * 60 * 1000);
+    });
+}
+
+/**
+ * Restarts the process safely.
+ * Tries PM2 first, then panel-compatible process.exit,
+ * with a proper flush delay so the final message is sent before exit.
+ */
 async function restartProcess(sock, chatId, message) {
+    // Send final message before anything else
     try {
-        await sock.sendMessage(chatId, { text: '✅ Update complete! Restarting…' }, { quoted: message });
+        await sock.sendMessage(chatId, {
+            text: '✅ Update complete! Bot is restarting, please wait 30–60 seconds then type .ping to confirm.'
+        }, { quoted: message });
     } catch {}
+
+    // Give WhatsApp time to flush the message before we kill the process
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Try PM2 graceful restart
     try {
-        // Preferred: PM2
-        await run('pm2 restart all');
+        const pm2Result = await run('pm2 id MegaBot || pm2 id all').catch(() => null);
+        if (pm2Result) {
+            await run('pm2 restart all --update-env');
+            console.log('[update] PM2 restart triggered');
+            return;
+        }
+    } catch {}
+
+    // Try pm2 by process name fallback
+    try {
+        await run('pm2 restart index');
         return;
     } catch {}
-    // Panels usually auto-restart when the process exits.
-    // Exit after a short delay to allow the above message to flush.
-    setTimeout(() => {
-        process.exit(0);
-    }, 500);
+
+    // Final fallback — clean exit, panel auto-restarts
+    console.log('[update] Exiting for panel auto-restart...');
+    process.exit(0);
 }
 
 async function updateCommand(sock, chatId, message, zipOverride) {
     const senderId = message.key.participant || message.key.remoteJid;
     const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
-    
+
     if (!message.key.fromMe && !isOwner) {
-        await sock.sendMessage(chatId, { text: 'Only bot owner or sudo can use .update' }, { quoted: message });
+        await sock.sendMessage(chatId, { text: '❌ Only bot owner or sudo can use .update' }, { quoted: message });
         return;
     }
+
     try {
-        // Minimal UX
-        await sock.sendMessage(chatId, { text: '🔄 Updating the bot, please wait…' }, { quoted: message });
+        await sock.sendMessage(chatId, { text: '🔄 Checking for updates…' }, { quoted: message });
+
         if (await hasGitRepo()) {
-            // silent
-            const { oldRev, newRev, alreadyUpToDate, commits, files } = await updateViaGit();
-            // Short message only: version info
-            const summary = alreadyUpToDate ? `✅ Already up to date: ${newRev}` : `✅ Updated to ${newRev}`;
-            console.log('[update] summary generated');
-            // silent
-            await run('npm install --no-audit --no-fund');
+            const { oldRev, newRev, alreadyUpToDate } = await updateViaGit();
+
+            if (alreadyUpToDate) {
+                await sock.sendMessage(chatId, {
+                    text: `✅ Already up to date (${newRev.slice(0, 7)}). No restart needed.`
+                }, { quoted: message });
+                return; // Don't restart if nothing changed
+            }
+
+            await sock.sendMessage(chatId, {
+                text: `📦 Updated to ${newRev.slice(0, 7)}\n\n🔧 Running npm install, this may take a moment on slow servers…`
+            }, { quoted: message });
+
+            await safeNpmInstall();
+
         } else {
-            const { copiedFiles } = await updateViaZip(sock, chatId, message, zipOverride);
-            // silent
+            await sock.sendMessage(chatId, { text: '📦 Downloading update zip…' }, { quoted: message });
+            await updateViaZip(zipOverride);
+
+            await sock.sendMessage(chatId, { text: '🔧 Running npm install…' }, { quoted: message });
+            await safeNpmInstall();
         }
-        try {
-            const v = require('../settings').version || '';
-            await sock.sendMessage(chatId, { text: `✅ Update done. Restarting…` }, { quoted: message });
-        } catch {
-            await sock.sendMessage(chatId, { text: '✅ Restared Successfully\n Type .ping to check latest version.' }, { quoted: message });
-        }
+
         await restartProcess(sock, chatId, message);
+
     } catch (err) {
-        console.error('Update failed:', err);
-        await sock.sendMessage(chatId, { text: `❌ Update failed:\n${String(err.message || err)}` }, { quoted: message });
+        console.error('[UPDATE ERROR]', err);
+        await sock.sendMessage(chatId, {
+            text: `❌ Update failed:\n${String(err.message || err)}\n\nTry restarting the bot manually from your panel.`
+        }, { quoted: message });
     }
 }
 
 module.exports = updateCommand;
-
-
