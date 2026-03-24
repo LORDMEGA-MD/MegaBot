@@ -137,7 +137,6 @@ async function updateViaZip(zipOverride) {
 
     const ignore = ['node_modules', '.git', 'session', 'tmp', 'temp', 'data', 'baileys_store.json'];
 
-    // Preserve owner settings
     let preservedOwner = null;
     let preservedBotOwner = null;
     try {
@@ -170,27 +169,26 @@ async function updateViaZip(zipOverride) {
 }
 
 /**
- * Runs npm install in a low-memory safe way.
- * Uses --prefer-offline to avoid re-downloading already cached packages,
- * and limits concurrent workers to avoid OOM on small servers.
+ * Low-memory safe npm install.
+ * Caps npm's own RAM, uses cache first, limits parallel connections.
  */
 async function safeNpmInstall() {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         console.log('[update] Running npm install (low-memory mode)...');
 
         const child = spawn('npm', [
             'install',
             '--no-audit',
             '--no-fund',
-            '--prefer-offline',     // use cache first — much less RAM
-            '--no-optional',        // skip optional deps
-            '--maxsockets=1',       // limit parallel network connections
+            '--prefer-offline',
+            '--no-optional',
+            '--maxsockets=1',
         ], {
             cwd: process.cwd(),
             stdio: ['ignore', 'pipe', 'pipe'],
             env: {
                 ...process.env,
-                NODE_OPTIONS: '--max-old-space-size=128', // cap npm's own RAM to 128MB
+                NODE_OPTIONS: '--max-old-space-size=128',
             }
         });
 
@@ -200,20 +198,18 @@ async function safeNpmInstall() {
         child.on('close', (code) => {
             if (code === 0) {
                 console.log('[update] npm install completed');
-                resolve();
             } else {
-                console.error('[update] npm install failed:', stderr);
-                // Don't reject — missing optional packages shouldn't block restart
-                resolve();
+                console.error('[update] npm install exited with code', code, stderr);
             }
+            resolve(); // Never block restart on npm install result
         });
 
         child.on('error', (err) => {
             console.error('[update] npm spawn error:', err.message);
-            resolve(); // Still don't block restart
+            resolve();
         });
 
-        // Safety timeout — if npm hangs for 3 minutes on a slow server, move on
+        // 3 minute safety timeout for slow servers
         setTimeout(() => {
             try { child.kill('SIGTERM'); } catch {}
             console.log('[update] npm install timed out — continuing anyway');
@@ -223,40 +219,37 @@ async function safeNpmInstall() {
 }
 
 /**
- * Restarts the process safely.
- * Tries PM2 first, then panel-compatible process.exit,
- * with a proper flush delay so the final message is sent before exit.
+ * Restarts the process safely for Bothost.net panel.
+ * Uses exit code 2 which panel hosting systems treat as
+ * "restart requested" rather than "crashed" or "stopped".
  */
 async function restartProcess(sock, chatId, message) {
-    // Send final message before anything else
+    // Send final message first
     try {
         await sock.sendMessage(chatId, {
             text: '✅ Update complete! Bot is restarting, please wait 30–60 seconds then type .ping to confirm.'
         }, { quoted: message });
     } catch {}
 
-    // Give WhatsApp time to flush the message before we kill the process
-    await new Promise(r => setTimeout(r, 3000));
+    // Wait 8 seconds — gives slow servers time to flush the WhatsApp message
+    // and gives the panel time to register the process is still alive
+    await new Promise(r => setTimeout(r, 8000));
 
-    // Try PM2 graceful restart
+    // Try PM2 first (in case it's available)
     try {
-        const pm2Result = await run('pm2 id MegaBot || pm2 id all').catch(() => null);
-        if (pm2Result) {
-            await run('pm2 restart all --update-env');
-            console.log('[update] PM2 restart triggered');
-            return;
-        }
+        await run('pm2 restart all --update-env');
+        console.log('[update] PM2 restart triggered');
+        return;
     } catch {}
 
-    // Try pm2 by process name fallback
     try {
         await run('pm2 restart index');
         return;
     } catch {}
 
-    // Final fallback — clean exit, panel auto-restarts
-    console.log('[update] Exiting for panel auto-restart...');
-    process.exit(0);
+    // Bothost.net panel restart — exit code 2 = restart requested (not crash)
+    console.log('[update] Triggering Bothost panel restart with exit code 2...');
+    process.exit(2);
 }
 
 async function updateCommand(sock, chatId, message, zipOverride) {
