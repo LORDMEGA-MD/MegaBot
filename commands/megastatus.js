@@ -46,7 +46,7 @@ async function sendGroupScopedStatus(sock, groupJid, content, options = {}) {
  */
 async function handleMegaStatus(sock, message, chatId, textAfterCommand) {
     if (!chatId.endsWith('@g.us')) {
-        await sock.sendMessage(chatId, { text: '❌ Use .gstatus only in groups' });
+        await sock.sendMessage(chatId, { text: '❌ Use .megastatus only in groups' });
         return;
     }
 
@@ -88,7 +88,7 @@ async function handleMegaStatus(sock, message, chatId, textAfterCommand) {
             content = { text: caption || 'Failed to download quoted media — posting text only' };
         }
     } else if (!caption) {
-        await sock.sendMessage(chatId, { text: '❌ Reply to media or add text after .gstatus' });
+        await sock.sendMessage(chatId, { text: '❌ Reply to media or add text after .megastatus' });
         return;
     }
 
@@ -99,7 +99,7 @@ async function handleMegaStatus(sock, message, chatId, textAfterCommand) {
         });
 
         await sock.sendMessage(chatId, { 
-            text: ' *POSTED AS STATUS* !(scoped to group members)\n> _BY MEGA-BOT_' 
+            text: ' *POSTED AS STATUS* !(scoped to only saved group members)\n> _BY MEGA-BOT_' 
         }, { quoted: message });
     } catch (err) {
         await sock.sendMessage(chatId, { text: `❌ Failed to post: ${err.message}` }, { quoted: message });
