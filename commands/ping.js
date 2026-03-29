@@ -20,27 +20,26 @@ function formatTime(seconds) {
 
 async function pingCommand(sock, chatId, message) {
     try {
-        const start = Date.now();
-       // await sock.sendMessage(chatId, { text: 'Pong!' }, { quoted: message });
-        const end = Date.now();
-        const ping = Math.round((end - start) / 2);
+        const start = Date.now()
 
-        const uptimeInSeconds = process.uptime();
-        const uptimeFormatted = formatTime(uptimeInSeconds);
+        // Measure real latency with a lightweight presence update
+        await sock.sendPresenceUpdate('available', chatId)
+
+        const ping = Date.now() - start
+        const uptimeFormatted = formatTime(process.uptime())
 
         const botInfo = `
 ┏━━〔 𝐌𝐞𝐠𝐚𝐁𝐨𝐭-𝐌𝐃𓃵 〕━┓
 ┃ 🗿 Ping     : ${ping} ms
 ┃ ⏱️ Uptime   : ${uptimeFormatted}
 ┃ 🔖 Version  : v${settings.version}
-┗━━━━━━━━━━━━━┛`.trim();
+┗━━━━━━━━━━━━━┛`.trim()
 
-        // Reply to the original message with the bot info
-        await sock.sendMessage(chatId, { text: botInfo},{ quoted: message });
+        await sock.sendMessage(chatId, { text: botInfo }, { quoted: message })
 
     } catch (error) {
-        console.error('Error in ping command:', error);
-        await sock.sendMessage(chatId, { text: '❌ Failed to get bot status.' });
+        console.error('Error in ping command:', error)
+        await sock.sendMessage(chatId, { text: '❌ Failed to get bot status.' })
     }
 }
 
