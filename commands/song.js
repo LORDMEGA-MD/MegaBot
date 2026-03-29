@@ -88,10 +88,10 @@ async function songCommand(sock, chatId, message) {
         }
 
         // Inform user
-        await sock.sendMessage(chatId, {
-            image: { url: video.thumbnail },
-            caption: `> MEGA-BOT Retrieving song..:\n *${video.title}*\n> ⏱ Duration: ${video.timestamp} _by *MEGA-BOT*_`
-        }, { quoted: message });
+        //await sock.sendMessage(chatId, {
+           // image: { url: video.thumbnail },
+           // caption: `> MEGA-BOT Retrieving song..:\n *${video.title}*\n> ⏱ Duration: ${video.timestamp} _by *MEGA-BOT*_`
+       // }, { quoted: message });
 
 		// Try multiple APIs with fallback chain: EliteProTech -> Yupra -> Okatsu
 		let audioData;
@@ -303,7 +303,7 @@ async function songCommand(sock, chatId, message) {
         // Provide more specific error messages
         let errorMessage = '❌ Failed to download song.';
         if (err.message && err.message.includes('blocked')) {
-            errorMessage = '❌ Download blocked. The content may be unavailable in your region or due to legal restrictions.';
+            errorMessage = '❌ Download blocked. The content may be unavailable due to legal restrictions.';
         } else if (err.response?.status === 451 || err.status === 451) {
             errorMessage = '❌ Content unavailable (451). This may be due to legal restrictions or regional blocking.';
         } else if (err.message && err.message.includes('All download sources failed')) {
