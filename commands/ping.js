@@ -30,11 +30,11 @@ async function pingCommand(sock, chatId, message) {
         const uptimeFormatted = formatTime(process.uptime())
 
         const botInfo = `
-┏━━〔 𝐌𝐞𝐠𝐚𝐁𝐨𝐭-𝐌𝐃𓃵 〕━┓
-┃ 🗿 Ping     : ${ping} ms
-┃ ⏱️ Uptime   : ${uptimeFormatted}
-┃ 🔖 Version  : v${settings.version}
-┗━━━━━━━━━━━━━┛`.trim()
+> ┏━〔 𝐌𝐞𝐠𝐚𝐁𝐨𝐭-𝐌𝐃𓃵 〕━┓
+> ┃ 🗿 Ping     : ${ping} ms
+> ┃ ⏱️ Uptime   : ${uptimeFormatted}
+> ┃ 🔖 Version  : v${settings.version}
+> ┗━━━━━━━━━━━━┛`.trim()
 
         await sock.sendMessage(chatId, { text: botInfo }, { quoted: message })
 
