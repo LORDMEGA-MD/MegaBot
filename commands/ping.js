@@ -20,12 +20,13 @@ function formatTime(seconds) {
 
 async function pingCommand(sock, chatId, message) {
     try {
+        // Send Pong to bot's own DM — invisible to group, real round trip
+        const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net'
+
         const start = Date.now()
+        await sock.sendMessage(botJid, { text: 'Pong!' })
+        const ping = Math.round((Date.now() - start) / 2)
 
-        // Measure real latency with a lightweight presence update
-        await sock.sendPresenceUpdate('available', chatId)
-
-        const ping = Date.now() - start
         const uptimeFormatted = formatTime(process.uptime())
 
         const botInfo = `
